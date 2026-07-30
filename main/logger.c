@@ -31,22 +31,11 @@ int logger_write(const sensor_reading_t *r) {
   return 0;
 }
 
-#else  // real hardware
-
-// TODO(Week 2): replace with real driver includes:
-// #include "driver/sdspi_host.h"
-// #include "esp_vfs_fat.h"
-// #include "sdmmc_cmd.h"
+#else // real hardware
 
 static FILE *log_file = NULL;
 
 int logger_init(void) {
-  // TODO: configure SPI bus for the SD card module (MOSI/MISO/CLK/CS
-  //   pins), mount FAT filesystem via esp_vfs_fat_sdspi_mount(), then
-  //   fopen("/sdcard/log.csv", "a") into log_file.
-  //
-  // TODO: if this is a fresh card / empty file, write a CSV header
-  //   line first: "timestamp_us,soil_pct,temp_c,humidity_pct,pressure_hpa"
   sdmmc_host_t host = SDSPI_HOST_DEFAULT();
   sdspi_slot_config_t slot_config = SDSPI_SLOT_CONFIG_DEFAULT();
   slot_config.gpio_miso = PIN_NUM_MISO;
@@ -95,75 +84,55 @@ int logger_init(void) {
   if (f == NULL) {
     ESP_LOGE(TAG, "Failed to open file for reading");
     return;
-    slot_config.gpio_miso = PIN_NUM_MISO;
-    slot_config.gpio_mosi = PIN_NUM_MOSI;
-    slot_config.gpio_sck = PIN_NUM_CLK;
-    slot_config.gpio_cs = PIN_NUM_CS;
-    // This initializes the slot without card detect (CD) and write protect (WP)
-    // signals. Modify slot_config.gpio_cd and slot_config.gpio_wp if your board
-    // has these signals.
-#endif // USE_SPI_MODE
-
-// Options for mounting the filesystem.
-// If format_if_mount_failed is set to true, SD card will be partitioned and
-// formatted in case when mounting fails.
-esp_vfs_fat_sdmmc_mount_config_t mount_config = {
-    .format_if_mount_failed = false,
-    .max_files = 5,
-    .allocation_unit_size = 16 * 1024};
-
-// Use settings defined above to initialize SD card and mount FAT filesystem.
-// Note: esp_vfs_fat_sdmmc_mount is an all-in-one convenience function.
-// Please check its source code and implement error recovery when developing
-// production applications.
-sdmmc_card_t *card;
-esp_err_t ret = esp_vfs_fat_sdmmc_mount("/sdcard", &host, &slot_config,
-                                        &mount_config, &card);
-
-if (ret != ESP_OK) {
-  if (ret == ESP_FAIL) {
-    ESP_LOGE(TAG, "Failed to mount filesystem. "
-                  "If you want the card to be formatted, set "
-                  "format_if_mount_failed = true.");
-  } else {
-    ESP_LOGE(TAG,
-             "Failed to initialize the card (%s). "
-             "Make sure SD card lines have pull-up resistors in place.",
-             esp_err_to_name(ret));
   }
-  return;
-}
+  slot_config.gpio_miso = PIN_NUM_MISO;
+  slot_config.gpio_mosi = PIN_NUM_MOSI;
+  slot_config.gpio_sck = PIN_NUM_CLK;
+  slot_config.gpio_cs = PIN_NUM_CS;
 
-// Card has been initialized, print its properties
-sdmmc_card_print_info(stdout, card);
+  // Options for mounting the filesystem.
+  // If format_if_mount_failed is set to true, SD card will be partitioned and
+  // formatted in case when mounting fails.
+  esp_vfs_fat_sdmmc_mount_config_t mount_config = {
+      .format_if_mount_failed = false,
+      .max_files = 5,
+      .allocation_unit_size = 16 * 1024};
 
-// Use POSIX and C standard library functions to work with files.
-// First create a file.
-ESP_LOGI(TAG, "Opening file");
-FILE *f = fopen("/sdcard/hello.txt", "w");
-if (f == NULL) {
-  ESP_LOGE(TAG, "Failed to open file for writing");
-  return;
-}
-fprintf(f, "Hello %s!\n", card->cid.name);
-fclose(f);
-ESP_LOGI(TAG, "File written");
+  // Use settings defined above to initialize SD card and mount FAT filesystem.
+  // Note: esp_vfs_fat_sdmmc_mount is an all-in-one convenience function.
+  // Please check its source code and implement error recovery when developing
+  // production applications.
+  sdmmc_card_t *card;
+  esp_err_t ret = esp_vfs_fat_sdmmc_mount("/sdcard", &host, &slot_config,
+                                          &mount_config, &card);
 
-// Check if destination file exists before renaming
-struct stat st;
-if (stat("/sdcard/foo.txt", &st) == 0) {
-  // Delete it if it exists
-  unlink("/sdcard/foo.txt");
-}
+  if (ret != ESP_OK) {
+    if (ret == ESP_FAIL) {
+      ESP_LOGE(TAG, "Failed to mount filesystem. "
+                    "If you want the card to be formatted, set "
+                    "format_if_mount_failed = true.");
+    } else {
+      ESP_LOGE(TAG,
+               "Failed to initialize the card (%s). "
+               "Make sure SD card lines have pull-up resistors in place.",
+               esp_err_to_name(ret));
+    }
+    return;
+  }
 
-// Rename original file
-ESP_LOGI(TAG, "Renaming file");
-if (rename("/sdcard/hello.txt", "/sdcard/foo.txt") != 0) {
-  ESP_LOGE(TAG, "Rename failed");
-  return;
-}
+  // Card has been initialized, print its properties
+  sdmmc_card_print_info(stdout, card);
 
-return 0;
+  // First create a file.
+  ESP_LOGI(TAG, "Opening file");
+  log_file = fopen("/sdcard/logger.txt", "w");
+  if (log_file == NULL) {
+    ESP_LOGE(TAG, "Failed to open file for writing");
+    return;
+  }
+  fprintf(log_file, "timestamp_us,soil_pct,temp_c,humidity_pct,pressure_hpa\n");
+
+  return 0;
 }
 
 int logger_write(const sensor_reading_t *r) {
@@ -172,12 +141,14 @@ int logger_write(const sensor_reading_t *r) {
   }
   // TODO: fprintf(log_file, "%lld,%.2f,%.2f,%.2f,%.2f\n", ...);
   ESP_LOGI(TAG, "Opening file");
-  FILE *f = fopen("/sdcard/hello.txt", "w");
+  FILE *f = fopen("/sdcard/logger.txt", "w");
   if (f == NULL) {
     ESP_LOGE(TAG, "Failed to open file for writing");
     return;
   }
-  fprintf(f, "Hello %s!\n", card->cid.name);
+  fprintf(f, "%.2f,%.2f,%.2f,%.2f,%.2f\n", r->timestamp_us,
+          r->soil_moisture_pct, r->temperature_c, r->humidity_pct,
+          r->pressure_hpa);
   fclose(f);
   ESP_LOGI(TAG, "File written");
   // TODO: fflush()/fsync() periodically -- decide the tradeoff between
