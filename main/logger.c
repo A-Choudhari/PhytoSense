@@ -12,6 +12,10 @@
 #define MOCK_HARDWARE 0
 
 static const char *TAG = "logger";
+#define PIN_NUM_MISO 2
+#define PIN_NUM_MOSI 15
+#define PIN_NUM_CLK 14
+#define PIN_NUM_CS 13
 
 #if MOCK_HARDWARE
 
@@ -68,61 +72,6 @@ int logger_init(void) {
   // Card has been initialized, print its properties
   sdmmc_card_print_info(stdout, card);
 
-  // Use POSIX and C standard library functions to work with files.
-  // First create a file.
-
-  // Check if destination file exists before renaming
-  struct stat st;
-  if (stat("/sdcard/foo.txt", &st) == 0) {
-    // Delete it if it exists
-    unlink("/sdcard/foo.txt");
-  }
-
-  // Open renamed file for reading
-  ESP_LOGI(TAG, "Reading file");
-  f = fopen("/sdcard/foo.txt", "r");
-  if (f == NULL) {
-    ESP_LOGE(TAG, "Failed to open file for reading");
-    return;
-  }
-  slot_config.gpio_miso = PIN_NUM_MISO;
-  slot_config.gpio_mosi = PIN_NUM_MOSI;
-  slot_config.gpio_sck = PIN_NUM_CLK;
-  slot_config.gpio_cs = PIN_NUM_CS;
-
-  // Options for mounting the filesystem.
-  // If format_if_mount_failed is set to true, SD card will be partitioned and
-  // formatted in case when mounting fails.
-  esp_vfs_fat_sdmmc_mount_config_t mount_config = {
-      .format_if_mount_failed = false,
-      .max_files = 5,
-      .allocation_unit_size = 16 * 1024};
-
-  // Use settings defined above to initialize SD card and mount FAT filesystem.
-  // Note: esp_vfs_fat_sdmmc_mount is an all-in-one convenience function.
-  // Please check its source code and implement error recovery when developing
-  // production applications.
-  sdmmc_card_t *card;
-  esp_err_t ret = esp_vfs_fat_sdmmc_mount("/sdcard", &host, &slot_config,
-                                          &mount_config, &card);
-
-  if (ret != ESP_OK) {
-    if (ret == ESP_FAIL) {
-      ESP_LOGE(TAG, "Failed to mount filesystem. "
-                    "If you want the card to be formatted, set "
-                    "format_if_mount_failed = true.");
-    } else {
-      ESP_LOGE(TAG,
-               "Failed to initialize the card (%s). "
-               "Make sure SD card lines have pull-up resistors in place.",
-               esp_err_to_name(ret));
-    }
-    return;
-  }
-
-  // Card has been initialized, print its properties
-  sdmmc_card_print_info(stdout, card);
-
   // First create a file.
   ESP_LOGI(TAG, "Opening file");
   log_file = fopen("/sdcard/logger.txt", "w");
@@ -151,10 +100,8 @@ int logger_write(const sensor_reading_t *r) {
           r->pressure_hpa);
   fclose(f);
   ESP_LOGI(TAG, "File written");
-  // TODO: fflush()/fsync() periodically -- decide the tradeoff between
-  //   write durability (flush every sample) and flash/SD wear +
-  //   power draw (flush every N samples) -- worth a line in your
-  //   README about why you picked what you picked.
+
+  fflush(f);
   return 0;
 }
 
